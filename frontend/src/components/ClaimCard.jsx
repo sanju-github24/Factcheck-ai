@@ -34,17 +34,36 @@ function CredBadge({ score, label, color }) {
 
 function ImageAIBadge({ analysis }) {
   if (!analysis?.available) return null;
-  const isAI  = analysis.ai_generated;
-  const prob  = analysis.ai_probability ?? 0;
-  const pct   = Math.round(prob * 100);
-  const color = isAI ? "#f87171" : "#4ade80";
-  const label = isAI ? "AI Generated" : "Likely Real";
+  const isAI   = analysis.ai_generated;
+  const aiProb = analysis.ai_probability ?? 0;
+
+  // Show AI% when AI, show Real% (inverse) when real
+  const displayPct = isAI
+    ? Math.round(aiProb * 100)           // e.g. 94% AI
+    : Math.round((1 - aiProb) * 100);   // e.g. 99% Real
+
+  const bg    = isAI ? "rgba(220,30,30,0.92)" : "rgba(0,160,70,0.92)";
+  const icon  = isAI ? "🤖" : "📷";
+  const label = isAI ? "AI GENERATED" : "REAL PHOTO";
+  const suffix = isAI ? "AI" : "Real";
+
   return (
-    <span style={{
-      fontSize: 9, padding: "2px 7px", borderRadius: 20, fontFamily: "'DM Mono',monospace",
-      background: `${color}18`, border: `1px solid ${color}44`, color,
-      fontWeight: 700, letterSpacing: "0.04em",
-    }}>{label} {pct}%</span>
+    <div style={{
+      position:"absolute", bottom:0, left:0, right:0,
+      background: bg, backdropFilter:"blur(4px)",
+      padding:"7px 12px", borderRadius:"0 0 9px 9px",
+      display:"flex", alignItems:"center", justifyContent:"space-between",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <span style={{ fontSize:13 }}>{icon}</span>
+        <span style={{ fontSize:11, fontWeight:800, color:"#fff", fontFamily:"'DM Mono',monospace", letterSpacing:"0.06em" }}>
+          {label}
+        </span>
+      </div>
+      <span style={{ fontSize:15, fontWeight:900, color:"#fff", fontFamily:"'Syne',sans-serif" }}>
+        {displayPct}% {suffix}
+      </span>
+    </div>
   );
 }
 
@@ -76,20 +95,17 @@ function ImageGallery({ images, imageAnalysis, borderColor }) {
       )}
       <div style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(visible.length,3)},1fr)`, gap:8 }}>
         {images.slice(0,3).map((src,i) => failed[i] ? null : (
-          <div key={i} style={{ position:"relative" }}>
-            <div onClick={() => setActive(active === i ? null : i)} style={{
-              borderRadius:10, overflow:"hidden",
+          <div key={i}
+            onClick={() => setActive(active === i ? null : i)}
+            style={{
+              position:"relative", borderRadius:10,
+              overflow:"hidden",
               border: active === i ? `2px solid ${borderColor || "rgba(255,255,255,0.4)"}` : `1px solid ${borderColor || "rgba(255,255,255,0.1)"}`,
               cursor:"zoom-in", aspectRatio:"16/9", background:"rgba(255,255,255,0.03)",
             }}>
-              <img src={src} alt="" onError={() => setFailed(f=>({...f,[i]:true}))}
-                style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}/>
-            </div>
-            {imageAnalysis?.[i] && (
-              <div style={{ position:"absolute", bottom:6, left:6 }}>
-                <ImageAIBadge analysis={imageAnalysis[i]}/>
-              </div>
-            )}
+            <img src={src} alt="" onError={() => setFailed(f=>({...f,[i]:true}))}
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}/>
+            {imageAnalysis?.[i] && <ImageAIBadge analysis={imageAnalysis[i]}/>}
           </div>
         ))}
       </div>

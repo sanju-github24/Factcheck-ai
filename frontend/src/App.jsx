@@ -11,6 +11,7 @@ import SourceTextHighlighter  from "./components/SourceTextHighlighter";
 import SourceTrustPanel       from "./components/SourceTrustPanel";
 import MisinfoPatternPanel    from "./components/MisinfoPatternPanel";
 import ClaimNetworkGraph      from "./components/ClaimNetworkGraph";
+import MediaAnalysisPanel     from "./components/MediaAnalysisPanel";
 import LoadingTransition       from "./components/LoadingTransition";
 import CompareMode            from "./components/CompareMode";
 import ConfidenceChart        from "./components/ConfidenceChart";
@@ -550,6 +551,11 @@ export default function App() {
 
             {/* ── RIGHT: Claims ── */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* Article media AI detection — only shown for URL inputs */}
+              {report.articleMedia?.available && report.articleMedia?.images?.length > 0 && (
+                <MediaAnalysisPanel articleMedia={report.articleMedia} />
+              )}
 
               {/* Truth timeline */}
               <ClaimTimeline claims={report.claims} />

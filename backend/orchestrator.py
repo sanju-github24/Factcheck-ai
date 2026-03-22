@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 
 from services.scraper import fetch_url
 from services.freshness import calculate_freshness, check_wayback
+from services.article_images import scrape_and_analyze
 from agents.claim_extractor import extract_claims
 from agents.evidence_retriever import retrieve_evidence
 from agents.verdict_engine import verdict
@@ -30,18 +31,32 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
     else:
         text = input_text
 
+    # Initialize article_media — only populated for URL inputs
+    article_media = {"available": False, "images": [], "summary": {}}
+
+    # ── Article image scraping — URL inputs only ───────────────────────────
+    if input_type == "url" and url:
+        yield _emit({"stage": "extracting", "message": "Scanning article for embedded media…"})
+        article_media = await scrape_and_analyze(url)
+        n = len(article_media.get("images", []))
+        yield _emit({
+            "stage":        "extracting",
+            "message":      f"Found {n} article images — running AI detection…" if n else "No article images found.",
+            "articleMedia": article_media,
+        })
+
     # ── 2. Parallel fast analysis: AI detection + Bias + Source Trust + Misinfo ──
     yield _emit({"stage": "extracting", "message": "Running intelligence analysis…"})
 
-    ai_score_task     = detect_ai(text)
-    bias_task         = detect_bias(text)
-    trust_task        = analyze_source_trust(text, url)
-    misinfo_task      = detect_misinfo_patterns(text)
-    wayback_task      = check_wayback(url) if url else asyncio.coroutine(lambda: {"available": False})()
+    async def _no_wayback():
+        return {"available": False}
 
     ai_score, bias_result, trust_result, misinfo_result, wayback_result = await asyncio.gather(
-        ai_score_task, bias_task, trust_task, misinfo_task,
-        check_wayback(url) if url else asyncio.coroutine(lambda: {"available": False})()
+        detect_ai(text),
+        detect_bias(text),
+        analyze_source_trust(text, url),
+        detect_misinfo_patterns(text),
+        check_wayback(url) if url else _no_wayback(),
     )
 
     yield _emit({
@@ -75,7 +90,7 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
         all_sources.extend(raw_results)
 
         yield _emit({"stage": "verifying", "message": f"Verifying claim {i+1}/{len(claims)} with Gemini…"})
-        v = await verdict(claim_text, evidence_text, raw_results)
+        v = await verdict(claim_text, evidence_text, raw_results, input_type=input_type)
 
         result = {
             "id":                     claim.get("id", i + 1),
@@ -149,6 +164,7 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
         "timeSensitiveClaims": sum(1 for r in results if r.get("time_sensitive")),
         "severityCounts":      severity_counts,
         "graphData":           {"nodes": graph_nodes, "edges": graph_edges},
+        "articleMedia":        article_media,
     }
 
     yield _emit({"stage": "complete", "message": "Analysis complete!", "report": report})

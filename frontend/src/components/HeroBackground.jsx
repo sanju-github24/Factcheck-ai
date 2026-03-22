@@ -10,14 +10,16 @@ const DEMOS = [
 ];
 
 const FLOATING_CLAIMS = [
-  { text: "First iPhone — June 2007",   verdict: "true",    x: 7,  y: 16 },
-  { text: "Moon landing was faked",      verdict: "false",   x: 75, y: 11 },
-  { text: "India landed on Moon 2023",   verdict: "true",    x: 83, y: 60 },
-  { text: "Humans use 10% of brain",     verdict: "false",   x: 5,  y: 70 },
-  { text: "Amazon absorbs more CO₂",     verdict: "partial", x: 61, y: 79 },
-  { text: "Nvidia crossed $3T — 2024",   verdict: "true",    x: 73, y: 34 },
-  { text: "mRNA vaccines alter DNA",     verdict: "false",   x: 17, y: 49 },
-  { text: "CO₂ levels rising globally",  verdict: "true",    x: 41, y: 87 },
+  // Left column — spaced vertically, safe from edges
+  { text: "First iPhone — June 2007",   verdict: "true",    x: 10, y: 18 },
+  { text: "mRNA vaccines alter DNA",     verdict: "false",   x: 11, y: 38 },
+  { text: "Humans use 10% of brain",     verdict: "false",   x: 9,  y: 58 },
+  { text: "CO₂ levels rising globally",  verdict: "true",    x: 12, y: 78 },
+  // Right column — spaced vertically, safe from edges
+  { text: "Moon landing was faked",      verdict: "false",   x: 82, y: 15 },
+  { text: "Nvidia crossed $3T — 2024",   verdict: "true",    x: 80, y: 35 },
+  { text: "India landed on Moon 2023",   verdict: "true",    x: 83, y: 55 },
+  { text: "Amazon absorbs more CO₂",     verdict: "partial", x: 79, y: 75 },
 ];
 
 const VC = {
@@ -156,17 +158,40 @@ export default function HeroBackground({ onRun, isRunning, onRestore, onCompare 
         <div style={{ position:"absolute", width:500, height:500, bottom:"-140px", left:"30%", borderRadius:"50%", background:"radial-gradient(circle, rgba(52,211,153,0.12) 0%, transparent 70%)" }}/>
       </div>
 
+      {/* Subtle dot grid overlay */}
+      <div style={{
+        position:"absolute", inset:0, pointerEvents:"none",
+        backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)",
+        backgroundSize: "32px 32px",
+        opacity: 0.4,
+      }}/>
+
+      {/* Corner bracket decorations */}
+      {[
+        { top:16, left:16,   borderTop:"1.5px solid rgba(255,255,255,0.15)", borderLeft:"1.5px solid rgba(255,255,255,0.15)" },
+        { top:16, right:16,  borderTop:"1.5px solid rgba(255,255,255,0.15)", borderRight:"1.5px solid rgba(255,255,255,0.15)" },
+        { bottom:16, left:16,  borderBottom:"1.5px solid rgba(255,255,255,0.15)", borderLeft:"1.5px solid rgba(255,255,255,0.15)" },
+        { bottom:16, right:16, borderBottom:"1.5px solid rgba(255,255,255,0.15)", borderRight:"1.5px solid rgba(255,255,255,0.15)" },
+      ].map((s, i) => (
+        <div key={i} style={{ position:"absolute", ...s, width:28, height:28, pointerEvents:"none", zIndex:1 }}/>
+      ))}
+
       {/* Canvas */}
       <canvas ref={canvasRef} style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.85 }}/>
 
       {/* ── Floating claim pills ── */}
       {FLOATING_CLAIMS.map((fc, i) => {
-        const v   = VC[fc.verdict];
-        const act = activeNode === i;
+        const v       = VC[fc.verdict];
+        const act     = activeNode === i;
+        // Left side pills anchor from left, right side from right edge
+        const isRight = fc.x > 50;
+        const xStyle  = isRight
+          ? { right: `${100 - fc.x}%`, left: "auto" }
+          : { left: `${fc.x}%` };
         return (
           <div key={i} style={{
-            position:"absolute", left:`${fc.x}%`, top:`${fc.y}%`,
-            transform:"translate(-50%,-50%)",
+            position:"absolute", ...xStyle, top:`${fc.y}%`,
+            transform: isRight ? "translateY(-50%)" : "translateY(-50%)",
             zIndex:2, pointerEvents:"none",
             transition:"all 0.4s ease",
           }}>

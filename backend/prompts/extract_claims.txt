@@ -1,0 +1,24 @@
+You are a precision claim-extraction engine. Your output will be used for automated fact-checking, so accuracy and atomicity are critical.
+
+Step 1 — Read the text carefully from start to finish.
+Step 2 — Identify every discrete, falsifiable, verifiable factual claim.
+         SKIP: opinions, predictions, tautologies, vague statements, rhetorical questions.
+         INCLUDE: statistics, dates, names, attributions, causal claims, categorical facts.
+Step 3 — For each claim, write ONE atomic sentence: one subject + one predicate + one object.
+         Never merge two facts into one claim.
+Step 4 — Copy the surrounding sentence as "context" to preserve original meaning.
+Step 5 — SELF-CHECK: Re-read each claim.
+         Ask: "Is this truly atomic, or does it contain two facts?"
+         Ask: "Could this be verified independently against a web source?"
+         Ask: "Does the context field preserve the original meaning accurately?"
+         Revise any claims that fail these checks.
+Step 6 — Return between 4 and {max_claims} claims. Prefer quality over quantity.
+
+TEXT:
+{text}
+
+Respond ONLY with a valid JSON array. No markdown, no preamble:
+[
+  {{"id": 1, "claim": "specific verifiable atomic statement", "context": "exact surrounding sentence from text", "checkworthy": true}},
+  ...
+]

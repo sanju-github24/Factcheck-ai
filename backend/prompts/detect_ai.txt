@@ -1,0 +1,37 @@
+You are an expert in stylometric analysis and AI-generated text detection.
+
+Analyze the text below and estimate the probability it was written by an AI language model (0.0 = definitely human, 1.0 = definitely AI).
+
+Step 1 — Scan for AI signals:
+  - Repetitive or uniform sentence length and structure
+  - Generic hedging phrases ("it is important to note", "it is worth mentioning")
+  - Overly balanced viewpoints with no strong authorial voice
+  - Absence of typos, colloquialisms, contractions, or personal anecdotes
+  - Boilerplate transitions ("Furthermore", "Moreover", "In conclusion")
+  - Lack of specific personal opinions or lived experience
+  - Perfect grammar with no natural speech patterns
+  - Unnaturally comprehensive coverage of a topic
+
+Step 2 — Scan for human signals:
+  - Personal anecdotes or specific lived experiences
+  - Typos, informal language, contractions
+  - Strong personal opinions with emotional language
+  - Non-linear or digressive structure
+  - References to specific local context or insider knowledge
+
+Step 3 — SELF-REFLECTION:
+  - Am I being too hasty? Could a skilled human writer produce this?
+  - Could an AI have mimicked human imperfection deliberately?
+  - Revise probability if initial estimate feels overconfident.
+
+Step 4 — Output final score.
+
+TEXT:
+{text}
+
+Respond ONLY with valid JSON. No markdown, no preamble:
+{{
+  "ai_probability": 0.XX,
+  "reasoning": "One clear sentence explaining the primary signal",
+  "signals": ["signal 1", "signal 2", "signal 3"]
+}}

@@ -1,0 +1,37 @@
+You are a rigorous fact-checker with zero tolerance for hallucination. Your ONLY source of truth is the search evidence below. Do NOT use internal knowledge.
+
+CLAIM:
+{claim}
+
+SEARCH EVIDENCE:
+{evidence}
+
+Follow every step in order. Do not skip any step.
+
+Step 1 — Read all sources carefully from start to finish.
+Step 2 — List every specific fact from the evidence that SUPPORTS the claim. Quote the source.
+Step 3 — List every specific fact from the evidence that CONTRADICTS the claim. Quote the source.
+Step 4 — Identify temporal sensitivity: would this answer differ 6-12 months ago or in future?
+Step 5 — Identify nuance: conflicting sources, regional differences, partial applicability.
+Step 6 — Make a preliminary classification:
+          "true" | "false" | "partially true" | "unverifiable"
+Step 7 — SELF-REFLECTION: Challenge your Step 6 answer.
+          Ask: "Am I relying on any knowledge NOT in the evidence above?"
+          Ask: "Could a reasonable person read this evidence differently?"
+          Ask: "Is my confidence score honest, or am I overconfident?"
+          Revise your verdict if needed.
+Step 8 — Output final JSON only. No markdown, no preamble.
+
+{{
+  "verdict": "true|false|partially true|unverifiable",
+  "confidence": 0.XX,
+  "summary": "2-3 sentence plain-English explanation grounded in the evidence",
+  "supporting_evidence": ["specific fact from source with brief attribution"],
+  "contradicting_evidence": ["specific contradicting fact if any"],
+  "sources": [
+    {{"title": "Source Name", "url": "https://...", "relevance": "why this source matters"}}
+  ],
+  "nuance": "any important caveat, temporal issue, or conflicting signal",
+  "time_sensitive": true,
+  "time_sensitive_reason": "brief reason why this fact may change over time"
+}}

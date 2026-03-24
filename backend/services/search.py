@@ -38,13 +38,67 @@ def search(query: str, max_results: int = SEARCH_MAX) -> list[dict]:
                 "url":     r.get("url", ""),
                 "content": r.get("content", ""),
                 "score":   r.get("score", 0.0),
-                "images":  valid_images if i == 0 else [],  # attach images to first result
+                "images":  valid_images if i == 0 else [],
             }
             for i, r in enumerate(results)
         ]
     except Exception as e:
         print(f"[search] Tavily error: {e}")
         return []
+
+
+def search_for_claim(claim: str, max_results: int = SEARCH_MAX) -> list[dict]:
+    """
+    Targeted search for a specific atomic claim.
+    Builds a focused query from the claim text to avoid off-topic results.
+    Strips filler words so Tavily gets a clean, specific query.
+    """
+    # Strip common filler phrases that confuse search
+    filler = [
+        "is it true that", "is it true", "fact check", "verify that",
+        "is this true", "is this correct", "did", "does", "do",
+        "today", "currently", "recently", "now"
+    ]
+    query = claim.strip()
+    for f in filler:
+        query = query.lower().replace(f, "").strip()
+
+    # Limit query length for focused results
+    query = query[:120]
+    print(f"[search] Claim search query: '{query}'")
+
+    try:
+        resp = _client.search(
+            query=query,
+            search_depth="advanced",        # always advanced for claim verification
+            max_results=max_results,
+            include_raw_content=False,
+            include_images=True,
+        )
+        results = resp.get("results", [])
+        raw_images = [
+            img if isinstance(img, str) else img.get("url", "")
+            for img in resp.get("images", [])
+        ]
+        valid_images = [u for u in raw_images if u and _is_valid_image(u)][:4]
+
+        parsed = [
+            {
+                "title":   r.get("title", ""),
+                "url":     r.get("url", ""),
+                "content": r.get("content", ""),
+                "score":   r.get("score", 0.0),
+                "images":  valid_images if i == 0 else [],
+            }
+            for i, r in enumerate(results)
+        ]
+        print(f"[search] Got {len(parsed)} results for claim: '{claim[:60]}'")
+        return parsed
+
+    except Exception as e:
+        print(f"[search] Tavily error for claim search: {e}")
+        return []
+
 
 def format_results(results: list[dict]) -> str:
     """Flatten results into a readable block for LLM prompts."""

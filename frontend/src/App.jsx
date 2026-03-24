@@ -14,6 +14,7 @@ import ClaimNetworkGraph      from "./components/ClaimNetworkGraph";
 import MediaAnalysisPanel     from "./components/MediaAnalysisPanel";
 import LoadingTransition       from "./components/LoadingTransition";
 import CompareMode            from "./components/CompareMode";
+import DocVerify              from "./components/DocVerify";
 import ConfidenceChart        from "./components/ConfidenceChart";
 
 const STAGE_MESSAGES = {
@@ -298,7 +299,11 @@ export default function App() {
   const { status, stage, stageIndex, logs, aiScore, report, logsEndRef, run, setReport } = useSSEPipeline();
   const [submittedText, setSubmitted] = useState("");
   const [compareMode, setCompareMode]   = useState(false);
-  const [activeClaim, setActiveClaim]   = useState(null);
+  const [docVerifyOpen, setDocVerify]   = useState(false);
+  const [activeClaim, setActiveClaim]     = useState(null);
+  const [translating, setTranslating]     = useState(false);
+  const [translatedReport, setTranslated] = useState(null);
+  const [showEnglish, setShowEnglish]     = useState(false);
   const [dotFrame, setDotFrame]       = useState(0);
 
   const isIdle     = status === "idle";
@@ -319,7 +324,7 @@ export default function App() {
     } catch (_) {}
   }, []);
 
-  const handleRun   = (v, t) => { setSubmitted(v); run(v, t); };
+  const handleRun   = (v, t, opts = {}) => { setSubmitted(v); run(v, t, opts); };
   const handleReset = () => { window.history.pushState({}, "", "/"); window.location.reload(); };
 
   // Keyboard shortcuts
@@ -351,6 +356,58 @@ export default function App() {
       } catch(_) {}
     }
   }, [isComplete]);
+
+  // Live translation — streams translated claims one by one
+  const handleTranslate = async (targetLang) => {
+    if (!report) return;
+    setTranslating(true);
+    setTranslated(null);
+
+    // Always translate FROM the original report, not a previously translated version
+    const sourceReport = report;
+    const newClaims    = [...(sourceReport.claims || [])];
+
+    try {
+      const res     = await fetch("/api/translate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ report: sourceReport, language: targetLang }),
+      });
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer    = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n"); buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "[DONE]") { setTranslating(false); return; }
+          try {
+            const data = JSON.parse(payload);
+            // Live update — swap claim as it arrives
+            if (data.claimResult != null && data.claimIndex != null) {
+              newClaims[data.claimIndex] = data.claimResult;
+              setTranslated(prev => ({
+                ...(prev || sourceReport),
+                claims: [...newClaims],
+              }));
+            }
+            if (data.report) {
+              setTranslated(data.report);
+              setTranslating(false);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.error("Translation error:", e);
+    }
+    setTranslating(false);
+  };
 
   const handleReverify = useCallback(async (claimItem) => {
     try {
@@ -386,9 +443,18 @@ export default function App() {
   };
 
   if (compareMode) return <CompareMode onBack={() => setCompareMode(false)} />;
-  if (isIdle) return <HeroBackground onRun={handleRun} isRunning={false} onRestore={handleRestore} onCompare={() => setCompareMode(true)} />;
+  if (isIdle) return (
+    <>
+      <HeroBackground onRun={handleRun} isRunning={false} onRestore={handleRestore}
+        onCompare={() => setCompareMode(true)}
+        onDocVerify={() => setDocVerify(true)} />
+      {docVerifyOpen && <DocVerify onClose={() => setDocVerify(false)} />}
+    </>
+  );
 
   return (
+    <>
+    {docVerifyOpen && <DocVerify onClose={() => setDocVerify(false)} />}
     <div style={{ minHeight: "100vh", position: "relative", fontFamily: "var(--font-body)" }}>
 
       {/* ── Results page background — dark with aurora ── */}
@@ -444,6 +510,44 @@ export default function App() {
                   E=export · S=share · ⌘K=new
                 </span>
               </>
+            )}
+            {/* Language toggle — live translation */}
+            {isComplete && report?.langInfo && !report.langInfo.is_english && (
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{
+                  fontSize:10, padding:"3px 9px",
+                  background:"rgba(99,179,237,0.12)",
+                  border:"1px solid rgba(99,179,237,0.3)",
+                  borderRadius:20, color:"#63b3ed",
+                  fontFamily:"'DM Mono',monospace",
+                }}>🌐 {report.langInfo.language}</span>
+                <button
+                  onClick={() => {
+                    if (showEnglish) {
+                      setShowEnglish(false);
+                      setTranslated(null);
+                    } else {
+                      setShowEnglish(true);
+                      handleTranslate("English");
+                    }
+                  }}
+                  disabled={translating}
+                  style={{
+                    fontSize:10, padding:"4px 12px", borderRadius:20, cursor:"pointer",
+                    border:"1px solid rgba(255,255,255,0.2)",
+                    background: showEnglish ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)",
+                    color:"rgba(200,210,240,0.8)",
+                    fontFamily:"'DM Mono',monospace",
+                    display:"flex", alignItems:"center", gap:5,
+                    transition:"all 0.15s",
+                  }}
+                >
+                  {translating
+                    ? <><span style={{animation:"spin 0.8s linear infinite",display:"inline-block"}}>◌</span> Translating…</>
+                    : showEnglish ? "🌐 Show Original" : "🇬🇧 Show in English"
+                  }
+                </button>
+              </div>
             )}
             {["Gemini 2.5 Flash Lite", "Tavily"].map(t => (
               <span key={t} style={{ fontSize: 10, padding: "3px 9px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>{t}</span>
@@ -602,7 +706,7 @@ export default function App() {
                     {report.totalClaims} claims extracted and verified
                   </p>
                 </div>
-                {report.claims.map((item, i) => (
+                {(translatedReport?.claims || report.claims).map((item, i) => (
                   <ClaimCard
                     key={item.id || i} item={item} index={i}
                     onReverify={handleReverify}
@@ -624,5 +728,6 @@ export default function App() {
         )}
       </div>
     </div>
+    </>
   );
 }

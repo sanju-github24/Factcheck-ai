@@ -159,7 +159,7 @@ async def scrape_and_analyze(url, max_images=6):
                 "ai_probability":       a.get("ai_probability"),
                 "deepfake_probability": a.get("deepfake_probability"),
                 "label":                a.get("label", "Detection unavailable"),
-                "hive_available":       a.get("available", False),
+                "available":            a.get("available", False),
             }
             for a in analysis
         ],

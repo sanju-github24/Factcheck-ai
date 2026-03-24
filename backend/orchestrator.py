@@ -12,6 +12,7 @@ from agents.ai_detector import detect_ai
 from agents.contradiction_detector import detect_contradictions
 from agents.bias_detector import detect_bias
 from agents.source_trust import analyze_source_trust
+from agents.language_detector import detect_language, translate_claim_result
 from agents.misinfo_detector import detect_misinfo_patterns
 from agents.counter_narrative import batch_counter_narratives
 
@@ -20,7 +21,17 @@ def _emit(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, None]:
+async def run_pipeline(
+    input_text: str,
+    input_type: str,
+    web_enabled: bool = True,
+    doc_text: str | None = None,
+    doc_query: str | None = None,
+) -> AsyncGenerator[str, None]:
+
+    # ── Determine mode ─────────────────────────────────────────────────────
+    # doc_mode: a file was uploaded; doc_text is the document, doc_query is the claim
+    doc_mode = bool(doc_text and doc_query)
 
     # ── 1. Fetch text ──────────────────────────────────────────────────────
     yield _emit({"stage": "extracting", "message": "Fetching content…"})
@@ -28,8 +39,23 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
     if input_type == "url":
         text = await fetch_url(input_text)
         yield _emit({"stage": "extracting", "message": "Content fetched.", "preview": text[:200]})
+    elif doc_mode:
+        # Use the uploaded document text
+        text = doc_text
+        yield _emit({"stage": "extracting", "message": f"Document loaded - verifying claim: '{doc_query[:80]}...'"})
     else:
         text = input_text
+
+    # Detect language of input text
+    yield _emit({"stage": "extracting", "message": "Detecting language…"})
+    lang_info = await detect_language(text)
+    detected_lang = lang_info.get("language", "English")
+    is_english    = lang_info.get("is_english", True)
+    yield _emit({
+        "stage":    "extracting",
+        "message":  f"Language detected: {detected_lang}" + (" — will translate results" if not is_english else ""),
+        "langInfo": lang_info,
+    })
 
     # Initialize article_media — only populated for URL inputs
     article_media = {"available": False, "images": [], "summary": {}}
@@ -71,13 +97,23 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
 
     # ── 3. Extract claims ──────────────────────────────────────────────────
     yield _emit({"stage": "extracting", "message": "Decomposing text into atomic claims…"})
-    claims = await extract_claims(text)
-    yield _emit({
-        "stage":       "searching",
-        "message":     f"Extracted {len(claims)} claims. Starting evidence search…",
-        "claims":      claims,
-        "originalText": text[:3000],
-    })
+    if doc_mode:
+        # In document mode, the user's query IS the claim to verify
+        claims = [{"id": 1, "claim": doc_query, "context": "Verify this claim against the uploaded document."}]
+        yield _emit({
+            "stage":       "searching",
+            "message":     f"Verifying 1 claim against document…",
+            "claims":      claims,
+            "originalText": text[:3000],
+        })
+    else:
+        claims = await extract_claims(text)
+        yield _emit({
+            "stage":       "searching",
+            "message":     f"Extracted {len(claims)} claims. Starting evidence search…",
+            "claims":      claims,
+            "originalText": text[:3000],
+        })
 
     # ── 4. Per-claim: search + verdict ─────────────────────────────────────
     results = []
@@ -85,12 +121,25 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
 
     for i, claim in enumerate(claims):
         claim_text = claim.get("claim", "")
-        yield _emit({"stage": "searching", "message": f"Searching evidence for claim {i+1}/{len(claims)}: \"{claim_text[:70]}…\""})
-        raw_results, evidence_text = await retrieve_evidence(claim_text)
-        all_sources.extend(raw_results)
+        
+        if not web_enabled or doc_mode:
+            # Document-only mode: skip web search, use document text as evidence
+            yield _emit({"stage": "searching", "message": f"Searching document for claim {i+1}/{len(claims)}: \"{claim_text[:70]}…\""})
+            raw_results = []
+            # Use a relevant excerpt from the document as evidence
+            evidence_text = f"[DOCUMENT EVIDENCE]\n{text[:6000]}"
+        else:
+            yield _emit({"stage": "searching", "message": f"Searching evidence for claim {i+1}/{len(claims)}: \"{claim_text[:70]}…\""})
+            raw_results, evidence_text = await retrieve_evidence(claim_text, context=claim.get("context", ""))
+            all_sources.extend(raw_results)
 
         yield _emit({"stage": "verifying", "message": f"Verifying claim {i+1}/{len(claims)} with Gemini…"})
-        v = await verdict(claim_text, evidence_text, raw_results, input_type=input_type)
+        v = await verdict(
+            claim_text,
+            evidence_text,
+            raw_results,
+            input_type="doc" if (doc_mode or not web_enabled) else input_type,
+        )
 
         result = {
             "id":                     claim.get("id", i + 1),
@@ -109,6 +158,10 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
             "time_sensitive_reason":  v.get("time_sensitive_reason", ""),
             "freshness":              calculate_freshness(v.get("sources", [])),
         }
+        # Translate result back to detected language if non-English
+        if not is_english:
+            result = await translate_claim_result(result, detected_lang)
+
         results.append(result)
         yield _emit({
             "stage":       "verifying",
@@ -165,6 +218,7 @@ async def run_pipeline(input_text: str, input_type: str) -> AsyncGenerator[str, 
         "severityCounts":      severity_counts,
         "graphData":           {"nodes": graph_nodes, "edges": graph_edges},
         "articleMedia":        article_media,
+        "langInfo":            lang_info,
     }
 
     yield _emit({"stage": "complete", "message": "Analysis complete!", "report": report})

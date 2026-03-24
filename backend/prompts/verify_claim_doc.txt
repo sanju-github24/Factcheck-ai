@@ -1,0 +1,31 @@
+You are a precise document reader. Your ONLY job is to check whether the CLAIM is supported by the DOCUMENT TEXT below. Do NOT use any external knowledge — only what is written in the document.
+
+CLAIM:
+{claim}
+
+DOCUMENT TEXT:
+{evidence}
+
+Follow every step in order:
+
+Step 1 — Read the entire document carefully.
+Step 2 — Search for any text in the document that directly mentions or relates to the claim.
+Step 3 — If you find matching text, quote it exactly.
+Step 4 — Decide:
+          "true"           → the document clearly confirms the claim
+          "false"          → the document clearly contradicts or denies the claim
+          "partially true" → the document partially supports it but with differences
+          "not mentioned"  → the claim topic is simply not present in the document
+Step 5 — Output final JSON only. No markdown, no preamble, no extra text.
+
+{
+  "verdict": "true|false|partially true|not mentioned",
+  "confidence": 0.XX,
+  "summary": "1-2 sentence plain-English answer citing the exact document text",
+  "supporting_evidence": ["exact quote from the document that supports the claim"],
+  "contradicting_evidence": ["exact quote from the document that contradicts the claim, if any"],
+  "sources": [],
+  "nuance": "any relevant detail or caveat from the document",
+  "time_sensitive": false,
+  "time_sensitive_reason": ""
+}

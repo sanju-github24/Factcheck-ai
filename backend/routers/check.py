@@ -9,7 +9,13 @@ router = APIRouter()
 @router.post("/check")
 async def check(req: CheckRequest):
     return StreamingResponse(
-        run_pipeline(req.input, req.input_type),
+        run_pipeline(
+            req.input,
+            req.input_type,
+            web_enabled=req.web_enabled,
+            doc_text=req.doc_text,
+            doc_query=req.doc_query,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -24,7 +24,7 @@ async def _process_one(text: str, label: str) -> list[dict]:
     results = []
     for i, claim in enumerate(claims):
         claim_text         = claim.get("claim", "")
-        raw_results, evid  = await retrieve_evidence(claim_text)
+        raw_results, evid  = await retrieve_evidence(claim_text, context=claim.get("context", ""))
         v                  = await verdict(claim_text, evid, raw_results)
         results.append({
             "id":       claim.get("id", i + 1),

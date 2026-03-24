@@ -20,7 +20,7 @@ export function useSSEPipeline() {
     setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }, []);
 
-  const run = useCallback((input, inputType) => {
+  const run = useCallback((input, inputType, { webEnabled = true, docText = null, docQuery = null } = {}) => {
     setStatus("running");
     setStage("extracting");
     setLogs([]);
@@ -30,7 +30,7 @@ export function useSSEPipeline() {
     setErrorMsg("");
 
     controllerRef.current = startCheck({
-      input, inputType,
+      input, inputType, webEnabled, docText, docQuery,
       onEvent(data) {
         if (data.stage)       setStage(data.stage);
         if (data.message)     addLog(data.message);

@@ -7,15 +7,23 @@ const BASE = "/api";
  * onEvent(data: object) is called for each parsed SSE message.
  * Returns an AbortController so the caller can cancel.
  */
-export function startCheck({ input, inputType, onEvent, onDone, onError }) {
+export function startCheck({ input, inputType, webEnabled = true, docText = null, docQuery = null, onEvent, onDone, onError }) {
   const controller = new AbortController();
 
   (async () => {
     try {
+      const body = {
+        input,
+        input_type: inputType,
+        web_enabled: webEnabled,
+      };
+      if (docText)  body.doc_text  = docText;
+      if (docQuery) body.doc_query = docQuery;
+
       const res = await fetch(`${BASE}/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, input_type: inputType }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 

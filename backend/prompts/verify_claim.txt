@@ -20,18 +20,19 @@ Step 7 — SELF-REFLECTION: Challenge your Step 6 answer.
           Ask: "Could a reasonable person read this evidence differently?"
           Ask: "Is my confidence score honest, or am I overconfident?"
           Revise your verdict if needed.
-Step 8 — Output final JSON only. No markdown, no preamble.
+Step 8 — Output ONLY a single raw JSON object. No markdown, no code fences, no preamble, no explanation outside the JSON.
 
-{{
+Output format (return exactly this structure):
+{
   "verdict": "true|false|partially true|unverifiable",
-  "confidence": 0.XX,
+  "confidence": 0.85,
   "summary": "2-3 sentence plain-English explanation grounded in the evidence",
   "supporting_evidence": ["specific fact from source with brief attribution"],
   "contradicting_evidence": ["specific contradicting fact if any"],
   "sources": [
-    {{"title": "Source Name", "url": "https://...", "relevance": "why this source matters"}}
+    {"title": "Source Name", "url": "https://...", "relevance": "why this source matters"}
   ],
   "nuance": "any important caveat, temporal issue, or conflicting signal",
   "time_sensitive": true,
   "time_sensitive_reason": "brief reason why this fact may change over time"
-}}
+}

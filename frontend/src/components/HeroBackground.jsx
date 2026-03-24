@@ -38,7 +38,246 @@ const PHRASES = [
 
 const DOTS_ARR = ["", ".", "..", "..."];
 
-export default function HeroBackground({ onRun, isRunning, onRestore, onCompare }) {
+// ── HeroInputPanel ──────────────────────────────────────────────────────────
+function HeroInputPanel({ onRun, isRunning, onDocVerify }) {
+  // Web ON by default for text/URL mode; toggled OFF when a file is loaded
+  const [text, setText]         = useState("");
+  const [webOn, setWeb]         = useState(true);   // default ON for text/URL
+  const [fileName, setFileName] = useState("");
+  const [docText, setDocText]   = useState("");
+  const [extracting, setExtr]   = useState(false);
+  const fileRef                 = useRef(null);
+  const hasFile                 = !!fileName;
+
+  // Extract text from any uploaded file
+  const handleFile = async (f) => {
+    setFileName(f.name);
+    setExtr(true);
+    setText("");
+    setWeb(false);   // default web OFF when a file is uploaded
+    const name = f.name.toLowerCase();
+    let extracted = "";
+    if (name.endsWith(".pdf")) {
+      extracted = await new Promise(res => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            if (!window.pdfjsLib) {
+              await new Promise((ok, rej) => {
+                const s = document.createElement("script");
+                s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+                s.onload = ok; s.onerror = rej; document.head.appendChild(s);
+              });
+              window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            }
+            const pdf = await window.pdfjsLib.getDocument({ data: e.target.result }).promise;
+            let t = "";
+            for (let p = 1; p <= Math.min(pdf.numPages, 15); p++) {
+              const pg = await pdf.getPage(p);
+              const content = await pg.getTextContent();
+              t += content.items.map(i => i.str).join(" ") + "\n\n";
+            }
+            res(t.trim());
+          } catch { res(""); }
+        };
+        reader.readAsArrayBuffer(f);
+      });
+    } else {
+      extracted = await f.text().catch(() => "");
+    }
+    setDocText(extracted);
+    setExtr(false);
+  };
+
+  const removeFile = () => {
+    setFileName(""); setDocText(""); setText(""); setWeb(true);
+  };
+
+  const handleRun = () => {
+    if (hasFile) {
+      // File mode — text field is the CLAIM QUERY
+      if (!text.trim()) return;
+      // Pass structured doc params; web flag determines whether web search runs
+      onRun(text.trim(), "text", {
+        webEnabled: webOn,
+        docText: docText,
+        docQuery: text.trim(),
+      });
+    } else {
+      // No file — text field is the CONTENT to fact-check; web always on
+      if (!text.trim()) return;
+      onRun(text.trim(), "text", { webEnabled: true });
+    }
+  };
+
+  const canSubmit = hasFile ? (!!text.trim() && !extracting) : !!text.trim();
+
+  return (
+    <div style={{ width: "100%", maxWidth: 640 }}>
+
+      {/* Main card */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: `1px solid ${hasFile ? "rgba(99,179,237,0.35)" : "rgba(255,255,255,0.12)"}`,
+        borderRadius: 16, overflow: "hidden",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        backdropFilter: "blur(12px)",
+        transition: "border-color 0.2s",
+      }}>
+
+        {/* File banner — shown when file is loaded */}
+        {hasFile && (
+          <div style={{
+            padding: "10px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            background: "rgba(74,222,128,0.06)",
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 16 }}>📄</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 12, color: "#4ade80", margin: 0,
+                fontFamily: "'DM Mono',monospace" }}>
+                {extracting ? "⏳ Extracting text…" : `✓ ${fileName}`}
+              </p>
+              {!extracting && docText && (
+                <p style={{ fontSize: 10, color: "rgba(74,222,128,0.5)", margin: 0,
+                  fontFamily: "'DM Mono',monospace" }}>
+                  {docText.length.toLocaleString()} characters loaded
+                </p>
+              )}
+            </div>
+            <button onClick={removeFile} style={{
+              fontSize: 10, padding: "3px 9px", borderRadius: 6,
+              background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)",
+              color: "#f87171", cursor: "pointer",
+            }}>✕ Remove</button>
+          </div>
+        )}
+
+        {/* Textarea */}
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleRun(); }}
+          placeholder={
+            hasFile
+              ? "Enter a claim to verify against this document…"
+              : "Paste text, article, claims, or a URL to fact-check…"
+          }
+          rows={hasFile ? 3 : 5}
+          style={{
+            width: "100%", padding: "16px 18px", border: "none",
+            resize: "none", background: "transparent", color: "#e8eaf0",
+            fontSize: 14, fontFamily: "'Inter',sans-serif",
+            lineHeight: 1.7, outline: "none", boxSizing: "border-box",
+            display: "block",
+          }}
+        />
+
+        {/* Toolbar */}
+        <div style={{
+          padding: "10px 14px",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+
+          {/* Upload file button */}
+          {!hasFile && (
+            <>
+              <button onClick={() => fileRef.current?.click()}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  color: "rgba(200,210,240,0.55)", fontSize: 11,
+                  fontFamily: "'DM Mono',monospace", transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(99,179,237,0.4)"; e.currentTarget.style.color = "#63b3ed"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(200,210,240,0.55)"; }}
+              >📄 Upload File</button>
+              <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.txt,.md,.csv"
+                style={{ display: "none" }}
+                onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+            </>
+          )}
+
+          {/* Web Search toggle — always visible, default OFF */}
+          <div onClick={() => setWeb(w => !w)} style={{
+            display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
+            padding: "6px 12px", borderRadius: 10, userSelect: "none",
+            background: webOn ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.04)",
+            border: `1px solid ${webOn ? "rgba(251,191,36,0.45)" : "rgba(255,255,255,0.1)"}`,
+            transition: "all 0.2s",
+          }}>
+            {/* Toggle pill */}
+            <div style={{
+              width: 32, height: 18, borderRadius: 9, flexShrink: 0,
+              background: webOn ? "#fbbf24" : "rgba(255,255,255,0.15)",
+              position: "relative", transition: "background 0.2s",
+            }}>
+              <div style={{
+                position: "absolute", top: 2,
+                left: webOn ? 16 : 2,
+                width: 14, height: 14, borderRadius: "50%",
+                background: "#fff", transition: "left 0.2s",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+              }}/>
+            </div>
+            <span style={{
+              fontSize: 11, fontWeight: 600,
+              color: webOn ? "#fbbf24" : "rgba(200,210,240,0.4)",
+              fontFamily: "'DM Mono',monospace", transition: "color 0.2s",
+            }}>🌐 Web {webOn ? "ON" : "OFF"}</span>
+          </div>
+
+          <div style={{ flex: 1 }}/>
+
+          {/* Submit button */}
+          <button onClick={handleRun} disabled={!canSubmit || isRunning} style={{
+            padding: "9px 22px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+            cursor: canSubmit && !isRunning ? "pointer" : "not-allowed",
+            background: canSubmit && !isRunning
+              ? "linear-gradient(135deg,rgba(99,179,237,0.35),rgba(167,139,250,0.35))"
+              : "rgba(255,255,255,0.05)",
+            border: `1px solid ${canSubmit && !isRunning ? "rgba(99,179,237,0.6)" : "rgba(255,255,255,0.1)"}`,
+            color: canSubmit && !isRunning ? "#fff" : "rgba(255,255,255,0.25)",
+            fontFamily: "'Inter',sans-serif",
+            display: "flex", alignItems: "center", gap: 8,
+            transition: "all 0.15s",
+          }}>
+            {isRunning
+              ? <><span style={{ animation: "spin 0.9s linear infinite", display: "inline-block" }}>◌</span> Verifying…</>
+              : hasFile && !webOn ? "📄 Verify from Document"
+              : hasFile && webOn  ? "📄+🌐 Verify Document + Web"
+              : "✓ Verify Claims"
+            }
+          </button>
+        </div>
+      </div>
+
+        {/* Hint text */}
+      <p style={{
+        fontSize: 10, color: "rgba(200,210,240,0.28)",
+        textAlign: "center", marginTop: 8,
+        fontFamily: "'DM Mono',monospace",
+      }}>
+        {hasFile && !webOn && "Document mode — answers from file only · Toggle Web ON to also search live sources"}
+        {hasFile && webOn  && "Document + Web — verifies in document first, then cross-checks with Tavily"}
+        {!hasFile          && "Web search ON · Paste text or URL · Upload any file · 100+ languages · ⌘↵ to submit"}
+      </p>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        textarea::placeholder { color: rgba(255,255,255,0.2); }
+      `}</style>
+    </div>
+  );
+}
+
+
+export default function HeroBackground({ onRun, isRunning, onRestore, onCompare, onDocVerify }) {
   const canvasRef = useRef(null);
   const rafRef    = useRef(null);
 
@@ -334,15 +573,15 @@ export default function HeroBackground({ onRun, isRunning, onRestore, onCompare 
           Grounded verdicts with citations
         </p>
 
-        <MultiInputPanel onRun={onRun} isRunning={isRunning} />
+        {/* ── Unified Input Panel ── */}
+        <HeroInputPanel onRun={onRun} isRunning={isRunning} onDocVerify={onDocVerify} />
 
         {/* Recent checks */}
         <RecentChecks onRestore={onRestore} />
 
-        {/* Compare mode button */}
+        {/* Compare button */}
         <button onClick={onCompare} style={{
-          marginTop: 16,
-          padding: "9px 22px", borderRadius: 10,
+          marginTop:14, padding: "9px 22px", borderRadius: 10,
           border: "1px solid rgba(255,255,255,0.15)",
           background: "rgba(255,255,255,0.05)",
           color: "rgba(200,210,240,0.7)", fontSize: 12, fontWeight: 500,

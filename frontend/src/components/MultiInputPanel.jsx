@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import DocumentChat from "./DocumentChat";
+import DocVerify    from "./DocVerify";
 
 const ACCEPT_TYPES = {
   pdf:   { accept: ".pdf",                          label: "PDF Document",   icon: "📄" },
@@ -180,7 +182,7 @@ function AttachChip({ name, type, onRemove }) {
 }
 
 // ── Popup menu ─────────────────────────────────────────────────────────────
-function UploadMenu({ onClose, onFile, onMic, micState }) {
+function UploadMenu({ onClose, onFile, onMic, micState, onDocVerify }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -203,6 +205,11 @@ function UploadMenu({ onClose, onFile, onMic, micState }) {
     { label: "Photo / Screenshot",  sub: "jpg, png, webp",      icon: "🖼", action: () => openPicker("image/*") },
     { label: "PDF Document",        sub: "Extract text from PDF", icon: "📄", action: () => openPicker(".pdf") },
     { label: "Document",            sub: "docx, txt, md",        icon: "📝", action: () => openPicker(".doc,.docx,.txt,.md") },
+    { label: "Verify Document Claims",
+      sub: "Upload doc + enter claim + web verify",
+      icon: "🔍",
+      action: () => { onDocVerify?.(); onClose(); },
+    },
     { label: micState.recording ? "Stop Recording" : "Microphone",
       sub: micState.recording ? "Click to stop" : "Speak your claim",
       icon: "🎙",
@@ -267,6 +274,8 @@ export default function MultiInputPanel({ onRun, isRunning }) {
   const [showMenu, setShowMenu]     = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [processing, setProcessing] = useState(false);
+  const [docChat, setDocChat]         = useState(null);
+  const [showDocVerify, setDocVerify] = useState(false); // {text, fileName}
   const textareaRef = useRef(null);
 
   const mic = useMicRecorder((transcript) => {
@@ -285,8 +294,15 @@ export default function MultiInputPanel({ onRun, isRunning }) {
       : file.name.endsWith(".pdf") ? "pdf" : "doc";
     try {
       const text = await extractTextFromFile(file);
-      setValue(prev => prev ? prev + "\n\n" + text : text);
-      setAttachments(prev => [...prev, { name: file.name, type, id: Date.now() }]);
+      if (type === "pdf" || type === "doc") {
+        // Open document chat instead of extracting to textarea
+        setDocChat({ text, fileName: file.name });
+        setAttachments(prev => [...prev, { name: file.name, type, id: Date.now() }]);
+      } else {
+        // Images still go into textarea
+        setValue(prev => prev ? prev + "\n\n" + text : text);
+        setAttachments(prev => [...prev, { name: file.name, type, id: Date.now() }]);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -476,6 +492,7 @@ export default function MultiInputPanel({ onRun, isRunning }) {
               onFile={handleFile}
               onMic={handleMic}
               micState={mic}
+              onDocVerify={() => setDocVerify(true)}
             />
           )}
         </div>
@@ -514,6 +531,22 @@ export default function MultiInputPanel({ onRun, isRunning }) {
         @keyframes spin { to{transform:rotate(360deg)} }
         textarea::placeholder, input::placeholder { color:rgba(255,255,255,0.2); }
       `}</style>
+
+      {/* DocVerify modal */}
+      {showDocVerify && <DocVerify onClose={() => setDocVerify(false)} />}
+
+      {/* Document Chat modal */}
+      {docChat && (
+        <DocumentChat
+          documentText={docChat.text}
+          fileName={docChat.fileName}
+          onClose={() => setDocChat(null)}
+          onFactCheck={() => {
+            setValue(docChat.text);
+            setDocChat(null);
+          }}
+        />
+      )}
     </div>
   );
 }

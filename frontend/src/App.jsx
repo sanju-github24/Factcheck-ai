@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import { API_BASE } from "./api/config";
 import { useSSEPipeline }     from "./hooks/useSSEPipeline";
 import HeroBackground         from "./components/HeroBackground";
 import SummaryCards           from "./components/SummaryCards";
@@ -368,7 +369,7 @@ export default function App() {
     const newClaims    = [...(sourceReport.claims || [])];
 
     try {
-      const res     = await fetch("/api/translate", {
+      const res     = await fetch(`${API_BASE}/api/translate`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ report: sourceReport, language: targetLang }),
@@ -411,7 +412,7 @@ export default function App() {
 
   const handleReverify = useCallback(async (claimItem) => {
     try {
-      const res     = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: claimItem.claim, input_type: "text" }) });
+      const res     = await fetch(`${API_BASE}/api/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: claimItem.claim, input_type: "text" }) });
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer    = "";

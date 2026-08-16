@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import DocumentChat from "./DocumentChat";
 import DocVerify    from "./DocVerify";
+import { API_BASE } from "../api/config";
 
 const ACCEPT_TYPES = {
   pdf:   { accept: ".pdf",                          label: "PDF Document",   icon: "📄" },
@@ -87,75 +88,34 @@ function useMicRecorder(onTranscript) {
 }
 
 // ── File reader helpers ────────────────────────────────────────────────────
+/**
+ * Extract text from a document via the backend (/api/extract).
+ *
+ * The backend escalates pypdf → pdfplumber → Gemini OCR, so scanned PDFs and
+ * multi-column layouts work, and the whole file is read rather than 10 pages.
+ * Returns { text, pages, chars, method, truncated }.
+ */
 async function extractTextFromFile(file) {
-  const name = file.name.toLowerCase();
-
-  if (name.endsWith(".txt") || name.endsWith(".md")) {
-    return await file.text();
-  }
-
-  if (name.endsWith(".pdf")) {
-    // Use PDF.js from CDN
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          if (!window.pdfjsLib) {
-            // Load PDF.js dynamically
-            await new Promise((res, rej) => {
-              const s = document.createElement("script");
-              s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-              s.onload = res; s.onerror = rej;
-              document.head.appendChild(s);
-            });
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          }
-          const pdf   = await window.pdfjsLib.getDocument({ data: e.target.result }).promise;
-          let text    = "";
-          for (let p = 1; p <= Math.min(pdf.numPages, 10); p++) {
-            const page    = await pdf.getPage(p);
-            const content = await page.getTextContent();
-            text += content.items.map(i => i.str).join(" ") + "\n\n";
-          }
-          resolve(text.trim().slice(0, 6000) || "Could not extract text from PDF.");
-        } catch {
-          resolve("PDF text extraction failed. Try copying text manually.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
   if (file.type.startsWith("image/")) {
-    // Return a placeholder — backend will handle OCR via Gemini vision
-    return `[IMAGE: ${file.name}] Please describe or transcribe the text in this image for fact-checking.`;
+    // Images stay client-side — the pipeline handles them as text prompts
+    return {
+      text: `[IMAGE: ${file.name}] Please describe or transcribe the text in this image for fact-checking.`,
+      pages: 0, chars: 0, method: "image", truncated: false,
+    };
   }
 
-  if (name.endsWith(".doc") || name.endsWith(".docx")) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          if (!window.mammoth) {
-            await new Promise((res, rej) => {
-              const s = document.createElement("script");
-              s.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
-              s.onload = res; s.onerror = rej;
-              document.head.appendChild(s);
-            });
-          }
-          const result = await window.mammoth.extractRawText({ arrayBuffer: e.target.result });
-          resolve(result.value.slice(0, 6000));
-        } catch {
-          resolve("Could not extract text from document.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    });
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/extract`, { method: "POST", body: form });
+
+  if (!res.ok) {
+    let detail = `Extraction failed (HTTP ${res.status})`;
+    try { detail = (await res.json()).detail || detail; } catch { /* non-JSON error */ }
+    throw new Error(detail);
   }
 
-  return `File: ${file.name} (${(file.size / 1024).toFixed(1)} KB) — could not extract text automatically.`;
+  return await res.json();
 }
 
 // ── Attachment chip ────────────────────────────────────────────────────────
@@ -276,6 +236,8 @@ export default function MultiInputPanel({ onRun, isRunning }) {
   const [processing, setProcessing] = useState(false);
   const [docChat, setDocChat]         = useState(null);
   const [showDocVerify, setDocVerify] = useState(false); // {text, fileName}
+  const [doc, setDoc]                 = useState(null);  // extracted document
+  const [uploadError, setUploadError] = useState("");
   const textareaRef = useRef(null);
 
   const mic = useMicRecorder((transcript) => {
@@ -290,21 +252,31 @@ export default function MultiInputPanel({ onRun, isRunning }) {
 
   const handleFile = async (file) => {
     setProcessing(true);
+    setUploadError("");
     const type = file.type.startsWith("image/") ? "image"
-      : file.name.endsWith(".pdf") ? "pdf" : "doc";
+      : file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "doc";
     try {
-      const text = await extractTextFromFile(file);
-      if (type === "pdf" || type === "doc") {
-        // Open document chat instead of extracting to textarea
-        setDocChat({ text, fileName: file.name });
+      const result = await extractTextFromFile(file);
+
+      if (type === "image") {
+        setValue(prev => prev ? prev + "\n\n" + result.text : result.text);
         setAttachments(prev => [...prev, { name: file.name, type, id: Date.now() }]);
       } else {
-        // Images still go into textarea
-        setValue(prev => prev ? prev + "\n\n" + text : text);
+        // Documents feed the main fact-check pipeline so the full report
+        // renders on the main page. DocumentChat stays available separately.
+        setDoc({
+          fileName:  file.name,
+          text:      result.text,
+          pages:     result.pages,
+          chars:     result.chars,
+          method:    result.method,
+          truncated: result.truncated,
+        });
         setAttachments(prev => [...prev, { name: file.name, type, id: Date.now() }]);
       }
     } catch (e) {
       console.error(e);
+      setUploadError(e.message || "Could not read that file.");
     }
     setProcessing(false);
   };
@@ -320,10 +292,25 @@ export default function MultiInputPanel({ onRun, isRunning }) {
 
   const removeAttachment = (id) => setAttachments(prev => prev.filter(a => a.id !== id));
 
+  const removeDoc = () => {
+    setAttachments(prev => prev.filter(a => a.type !== "pdf" && a.type !== "doc"));
+    setDoc(null);
+  };
+
+  // A document alone is enough to submit — typed text is optional
+  const canSubmit = Boolean(doc?.text?.trim() || value.trim());
+
   const handleSubmit = () => {
-    if (!value.trim() || isRunning) return;
+    if (!canSubmit || isRunning) return;
     if (mic.recording) mic.stop();
-    onRun(value.trim(), inputType);
+
+    // Document text goes through the normal /api/check pipeline, so claim
+    // extraction + Gemini verdicts render in the main report.
+    const payload = doc?.text
+      ? (value.trim() ? `${doc.text}\n\n${value.trim()}` : doc.text)
+      : value.trim();
+
+    onRun(payload, doc ? "text" : inputType);
   };
 
   // Drag and drop
@@ -371,7 +358,11 @@ export default function MultiInputPanel({ onRun, isRunning }) {
             value={value}
             onChange={e => setValue(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && e.metaKey) handleSubmit(); }}
-            placeholder={mic.recording ? "Listening… speak your claim" : "Paste text, upload a file, or use mic…"}
+            placeholder={
+              mic.recording ? "Listening… speak your claim"
+              : doc         ? "Optional: add extra context or a specific claim to focus on…"
+              : "Paste text, upload a file, or use mic…"
+            }
             rows={5}
             style={{
               width:"100%", padding:"13px 15px 13px 15px",
@@ -438,8 +429,76 @@ export default function MultiInputPanel({ onRun, isRunning }) {
         )}
       </div>
 
+      {/* Upload error */}
+      {uploadError && (
+        <div style={{
+          marginTop:10, padding:"10px 13px", borderRadius:10,
+          background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)",
+          color:"#fca5a5", fontSize:12.5, fontFamily:"'Inter',sans-serif",
+          display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+        }}>
+          <span>⚠ {uploadError}</span>
+          <button onClick={() => setUploadError("")} style={{
+            background:"transparent", border:"none", color:"#fca5a5",
+            cursor:"pointer", fontSize:15, lineHeight:1, padding:0,
+          }}>×</button>
+        </div>
+      )}
+
+      {/* Extracted document card */}
+      {doc && (
+        <div style={{
+          marginTop:10, padding:"12px 14px", borderRadius:12,
+          background:"rgba(99,179,237,0.09)",
+          border:"1px solid rgba(99,179,237,0.32)",
+        }}>
+          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+            <span style={{ fontSize:17 }}>📄</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{
+                fontSize:13, fontWeight:600, color:"#eef0f8",
+                fontFamily:"'Inter',sans-serif",
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+              }}>{doc.fileName}</div>
+              <div style={{
+                fontSize:11.5, color:"rgba(200,210,240,0.6)",
+                fontFamily:"'DM Mono',monospace", marginTop:2,
+              }}>
+                {doc.pages > 0 && `${doc.pages} page${doc.pages === 1 ? "" : "s"} · `}
+                {doc.chars.toLocaleString()} chars extracted
+                {doc.method === "gemini-ocr" && " · OCR (scanned)"}
+                {doc.truncated && " · truncated"}
+              </div>
+            </div>
+            <button
+              onClick={() => setDocChat({ text: doc.text, fileName: doc.fileName })}
+              title="Ask questions about this document"
+              style={{
+                padding:"6px 11px", borderRadius:8, whiteSpace:"nowrap",
+                border:"1px solid rgba(255,255,255,0.18)", background:"rgba(255,255,255,0.06)",
+                color:"rgba(220,230,255,0.9)", fontSize:11.5, cursor:"pointer",
+                fontFamily:"'Inter',sans-serif",
+              }}
+            >💬 Ask</button>
+            <button onClick={removeDoc} title="Remove document" style={{
+              background:"transparent", border:"none", color:"rgba(200,210,240,0.5)",
+              cursor:"pointer", fontSize:17, lineHeight:1, padding:"0 2px",
+            }}>×</button>
+          </div>
+
+          <div style={{
+            marginTop:9, paddingTop:9, borderTop:"1px solid rgba(255,255,255,0.09)",
+            fontSize:11.5, color:"rgba(200,210,240,0.55)",
+            fontFamily:"'Inter',sans-serif", lineHeight:1.5,
+          }}>
+            Claims will be extracted from the whole document and verified with Gemini —
+            the full report appears below.
+          </div>
+        </div>
+      )}
+
       {/* Demo buttons */}
-      {inputType === "text" && (
+      {inputType === "text" && !doc && (
         <div style={{ display:"flex", flexWrap:"wrap", gap:7, marginTop:10, alignItems:"center" }}>
           <span style={{ fontSize:12, color:"rgba(200,210,240,0.5)" }}>Try demo:</span>
           {DEMOS.map(d => (
@@ -505,24 +564,24 @@ export default function MultiInputPanel({ onRun, isRunning }) {
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={!value.trim() || isRunning}
+          disabled={!canSubmit || isRunning}
           style={{
             padding:"10px 24px", borderRadius:10,
-            background: value.trim() && !isRunning ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.08)",
-            color: value.trim() && !isRunning ? "#080c14" : "rgba(255,255,255,0.25)",
+            background: canSubmit && !isRunning ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.08)",
+            color: canSubmit && !isRunning ? "#080c14" : "rgba(255,255,255,0.25)",
             border:"none", fontSize:13.5, fontWeight:700,
-            cursor: value.trim() && !isRunning ? "pointer" : "not-allowed",
+            cursor: canSubmit && !isRunning ? "pointer" : "not-allowed",
             fontFamily:"'Inter',sans-serif",
             display:"flex", alignItems:"center", gap:8,
             transition:"all 0.2s",
-            boxShadow: value.trim() && !isRunning ? "0 4px 20px rgba(255,255,255,0.15)" : "none",
+            boxShadow: canSubmit && !isRunning ? "0 4px 20px rgba(255,255,255,0.15)" : "none",
           }}
-          onMouseEnter={e => { if (value.trim() && !isRunning) e.currentTarget.style.background="#fff"; }}
-          onMouseLeave={e => { if (value.trim() && !isRunning) e.currentTarget.style.background="rgba(255,255,255,0.95)"; }}
+          onMouseEnter={e => { if (canSubmit && !isRunning) e.currentTarget.style.background="#fff"; }}
+          onMouseLeave={e => { if (canSubmit && !isRunning) e.currentTarget.style.background="rgba(255,255,255,0.95)"; }}
         >
           {isRunning
             ? <><span style={{ display:"inline-block", animation:"spin 0.9s linear infinite" }}>◌</span> Analyzing…</>
-            : "Verify Claims →"
+            : doc ? "Fact-check Document →" : "Verify Claims →"
           }
         </button>
       </div>
@@ -542,8 +601,9 @@ export default function MultiInputPanel({ onRun, isRunning }) {
           fileName={docChat.fileName}
           onClose={() => setDocChat(null)}
           onFactCheck={() => {
-            setValue(docChat.text);
+            // Run the document through the main pipeline
             setDocChat(null);
+            if (!isRunning) onRun(docChat.text, "text");
           }}
         />
       )}

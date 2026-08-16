@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import TypewriterText from "./TypewriterText";
+import { API_BASE } from "../api/config";
 
 export default function DocumentChat({ documentText, fileName, onClose, onFactCheck }) {
   const [messages, setMessages]   = useState([
@@ -22,7 +23,7 @@ export default function DocumentChat({ documentText, fileName, onClose, onFactCh
     setLoading(true);
 
     try {
-      const res  = await fetch("/api/docqa", {
+      const res  = await fetch(`${API_BASE}/api/docqa`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({

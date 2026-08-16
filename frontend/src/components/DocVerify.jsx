@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import TypewriterText from "./TypewriterText";
+import { API_BASE } from "../api/config";
 
 const VC = {
   true:             { color:"#4ade80", bg:"rgba(74,222,128,0.1)",  border:"rgba(74,222,128,0.3)",  icon:"✓", label:"TRUE" },
@@ -227,7 +228,7 @@ async function extractText(file) {
 
 // ── SSE stream helper ─────────────────────────────────────────────────────
 async function streamDocVerify(body, onEvent, doneSignal) {
-  const res     = await fetch("/api/docverify", {
+  const res     = await fetch(`${API_BASE}/api/docverify`, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify(body),
   });

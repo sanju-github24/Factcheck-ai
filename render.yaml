@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: factcheck-ai-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: HIVE_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: ""
+    healthCheckPath: /api/health

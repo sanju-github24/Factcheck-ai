@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import TypewriterText from "./TypewriterText";
+import { API_BASE } from "../api/config";
 
 const VERDICT_COLORS = {
   true:             { color: "#4ade80", bg: "rgba(74,222,128,0.1)",  border: "rgba(74,222,128,0.3)"  },
@@ -217,7 +218,7 @@ export default function CompareMode({ onBack }) {
 
     ctrlRef.current = new AbortController();
     try {
-      const res = await fetch("/api/compare", {
+      const res = await fetch(`${API_BASE}/api/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
